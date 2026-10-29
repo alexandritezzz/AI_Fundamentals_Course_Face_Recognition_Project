@@ -1,0 +1,7 @@
+**/.vscode/
+
+./Provided_Dataset
+
+**/__pycache__
+
+**/*.pkl

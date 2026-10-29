@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人脸识别演示终端</title>
+    <style>
+        :root {
+            --bg: #f6f8fb;
+            --panel: #ffffff;
+            --ink: #172033;
+            --muted: #667085;
+            --line: #d9e0ea;
+            --brand: #2563eb;
+            --brand-dark: #1d4ed8;
+            --danger: #dc2626;
+            --ok: #0f766e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            padding: 28px;
+        }
+
+        .app {
+            width: min(1120px, 100%);
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 22px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 28px;
+            line-height: 1.2;
+        }
+
+        .subtle {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .upload-box {
+            width: 100%;
+            min-height: 150px;
+            border: 2px dashed var(--line);
+            border-radius: 8px;
+            background: var(--panel);
+            display: grid;
+            place-items: center;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.16s ease, background 0.16s ease;
+        }
+
+        .upload-box:hover,
+        .upload-box.dragover {
+            border-color: var(--brand);
+            background: #eef5ff;
+        }
+
+        .upload-box strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #Status_Bar {
+            margin: 18px 0;
+            padding: 14px 16px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-left: 5px solid var(--brand);
+            border-radius: 6px;
+            color: var(--ink);
+            line-height: 1.5;
+        }
+
+        .display-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 18px;
+        }
+
+        .panel h2 {
+            margin: 0 0 14px;
+            font-size: 18px;
+        }
+
+        .view-wrapper {
+            min-height: 420px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #f9fafb;
+            overflow: auto;
+            padding: 12px;
+            display: grid;
+            place-items: center;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .reference-gallery {
+            width: 100%;
+            max-height: 100%;
+            overflow: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+            align-self: stretch;
+        }
+
+        .reference-card {
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+        }
+
+        .reference-card img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            display: block;
+        }
+
+        .identity-name {
+            padding: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ink);
+            word-break: break-word;
+        }
+
+        .empty-state {
+            min-height: 100%;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @media (max-width: 860px) {
+            body {
+                padding: 18px;
+            }
+
+            header,
+            .display-grid {
+                grid-template-columns: 1fr;
+                display: grid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="app">
+        <header>
+            <div>
+                <h1>人脸识别演示终端</h1>
+                <p class="subtle">上传图片后，系统会检测人脸并进行 1:N 身份检索。</p>
+            </div>
+        </header>
+
+        <label id="Upload_Box" class="upload-box" for="File_Input">
+            <span>
+                <strong>选择或拖入测试图片</strong>
+                <span class="subtle">支持常见图片格式</span>
+            </span>
+            <input type="file" id="File_Input" accept="image/*">
+        </label>
+
+        <div id="Status_Bar">系统就绪，等待上传图片。</div>
+
+        <section class="display-grid">
+            <div class="panel">
+                <h2>推理结果</h2>
+                <div class="view-wrapper">
+                    <canvas id="Main_Canvas"></canvas>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>底库参考</h2>
+                <div class="view-wrapper" id="ReferenceWrapper">
+                    <div class="empty-state">暂无匹配参考图</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const Canvas = document.getElementById("Main_Canvas");
+        const Context = Canvas.getContext("2d");
+        const Upload_Box = document.getElementById("Upload_Box");
+        const File_Input = document.getElementById("File_Input");
+        const Status_Bar = document.getElementById("Status_Bar");
+        const ReferenceWrapper = document.getElementById("ReferenceWrapper");
+
+        const THEME_COLORS = {
+            known: "#0f766e",
+            unknown: "#dc2626"
+        };
+
+        File_Input.addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                uploadImage(file);
+            }
+        });
+
+        Upload_Box.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            Upload_Box.classList.add("dragover");
+        });
+
+        Upload_Box.addEventListener("dragleave", (event) => {
+            event.preventDefault();
+            Upload_Box.classList.remove("dragover");
+        });
+
+        Upload_Box.addEventListener("drop", (event) => {
+            event.preventDefault();
+            Upload_Box.classList.remove("dragover");
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                uploadImage(file);
+            }
+        });
+
+        async function uploadImage(file) {
+            Context.clearRect(0, 0, Canvas.width, Canvas.height);
+            ReferenceWrapper.innerHTML = '<div class="empty-state">正在检索底库...</div>';
+            setStatus("正在提取特征并检索特征库...", THEME_COLORS.known);
+
+            const formData = new FormData();
+            formData.append("Image", file);
+
+            try {
+                const response = await fetch("/recognize", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderResult(file, data);
+            } catch (error) {
+                setStatus(`网络错误：无法连接到后端服务。${error.message}`, THEME_COLORS.unknown);
+                ReferenceWrapper.innerHTML = '<div class="empty-state">请求失败</div>';
+            }
+        }
+
+        function setStatus(message, color) {
+            Status_Bar.style.borderLeftColor = color;
+            Status_Bar.innerHTML = message;
+        }
+
+        function drawFaceBox(ctx, face, imgWidth) {
+            const [x1, y1, x2, y2] = face["BBox."];
+            const width = x2 - x1;
+            const height = y2 - y1;
+            const isKnown = face["Identity."] !== "Unknown.";
+            const color = isKnown ? THEME_COLORS.known : THEME_COLORS.unknown;
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = Math.max(imgWidth / 200, 2);
+            ctx.strokeRect(x1, y1, width, height);
+
+            const fontSize = Math.max(Math.min(width / 8, 28), 14);
+            const labelHeight = fontSize * 1.6;
+            const score = Number.parseFloat(face["Score."]);
+            const name = isKnown ? face["Identity."].split(" ")[0] : "Unknown";
+            const label = isKnown && Number.isFinite(score)
+                ? `${name} ${score.toFixed(3)}`
+                : name;
+            const labelWidth = Math.max(ctx.measureText(label).width + 16, width);
+            const labelY = Math.max(0, y1 - labelHeight);
+
+            ctx.fillStyle = color;
+            ctx.fillRect(x1, labelY, labelWidth, labelHeight);
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `700 ${fontSize}px Arial, "Microsoft YaHei", sans-serif`;
+            ctx.textBaseline = "middle";
+            ctx.fillText(label, x1 + 8, labelY + labelHeight / 2);
+        }
+
+        function renderReferenceGallery(faces) {
+            const knownFaces = faces.filter((face) =>
+                face["Identity."] !== "Unknown." && face["Reference_Encoded_Image."]
+            );
+
+            if (knownFaces.length === 0) {
+                ReferenceWrapper.innerHTML = '<div class="empty-state">暂无匹配参考图</div>';
+                return;
+            }
+
+            const uniqueMap = new Map();
+            for (const face of knownFaces) {
+                if (!uniqueMap.has(face["Identity."])) {
+                    uniqueMap.set(face["Identity."], face["Reference_Encoded_Image."]);
+                }
+            }
+
+            const gallery = document.createElement("div");
+            gallery.className = "reference-gallery";
+
+            for (const [identity, imageSrc] of uniqueMap.entries()) {
+                const card = document.createElement("div");
+                card.className = "reference-card";
+
+                const image = document.createElement("img");
+                image.src = imageSrc;
+                image.alt = identity;
+                image.loading = "lazy";
+
+                const name = document.createElement("div");
+                name.className = "identity-name";
+                name.textContent = identity;
+
+                card.appendChild(image);
+                card.appendChild(name);
+                gallery.appendChild(card);
+            }
+
+            ReferenceWrapper.innerHTML = "";
+            ReferenceWrapper.appendChild(gallery);
+        }
+
+        function renderResult(file, data) {
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+
+            img.onload = () => {
+                Canvas.width = img.width;
+                Canvas.height = img.height;
+                Context.drawImage(img, 0, 0);
+
+                const faces = Array.isArray(data["Faces."]) ? data["Faces."] : [];
+                faces.forEach((face) => drawFaceBox(Context, face, img.width));
+
+                if (faces.length === 0) {
+                    setStatus("未能在图像中检测到人脸特征。", THEME_COLORS.unknown);
+                } else if (faces.length === 1) {
+                    const face = faces[0];
+                    const score = Number.parseFloat(face["Score."]);
+                    if (face["Identity."] !== "Unknown.") {
+                        setStatus(
+                            `识别完成：匹配到 <strong>${face["Identity."]}</strong>，相似度 ${score.toFixed(4)}。`,
+                            THEME_COLORS.known
+                        );
+                    } else {
+                        setStatus("识别完成：检测到人脸，但未达到匹配阈值。", THEME_COLORS.unknown);
+                    }
+                } else {
+                    const matched = [...new Set(
+                        faces
+                            .filter((face) => face["Identity."] !== "Unknown.")
+                            .map((face) => face["Identity."])
+                    )];
+
+                    if (matched.length > 0) {
+                        setStatus(
+                            `多目标识别完成：检测到 ${faces.length} 张人脸，命中 ${matched.join(", ")}。`,
+                            THEME_COLORS.known
+                        );
+                    } else {
+                        setStatus(
+                            `多目标识别完成：检测到 ${faces.length} 张人脸，均未命中。`,
+                            THEME_COLORS.unknown
+                        );
+                    }
+                }
+
+                renderReferenceGallery(faces);
+                URL.revokeObjectURL(img.src);
+            };
+        }
+    </script>
+</body>
+
+</html>
